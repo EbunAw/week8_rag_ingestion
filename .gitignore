@@ -1,0 +1,15 @@
+# Secrets
+.env
+
+# Python virtual environment and cache
+.venv/
+__pycache__/
+*.py[cod]
+
+# Local vector database
+chroma_db/
+
+# Uploaded documents
+uploads/
+
+.idea/
