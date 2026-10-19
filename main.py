@@ -1,201 +1,165 @@
-from pathlib import Path
+from fastapi import FastAPI, Request
+from fastapi.responses import HTMLResponse
+from fastapi.templating import Jinja2Templates
+from pydantic import BaseModel
+import logging
 
-from fastapi import FastAPI, File, UploadFile, HTTPException
-from fastapi.responses import HTMLResponse, JSONResponse
-
-from extract_pdf import extract_pdf_text
-from embeddings import generate_embeddings
-from vector_store import store_chunks
-
-
-app = FastAPI()
-
-UPLOAD_DIR = Path("uploads")
-UPLOAD_DIR.mkdir(exist_ok=True)
+from tools import ask_tool, predict_tool, lookup_tool
 
 
-PAGE = """
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <title>RAG PDF Ingestion</title>
-    <style>
-        body {
-            font-family: Arial, sans-serif;
-            max-width: 650px;
-            margin: 50px auto;
-            padding: 20px;
-            background: #f4f7fb;
-        }
-        .container {
-            background: white;
-            padding: 25px;
-            border-radius: 12px;
-        }
-        button {
-            background: #34306f;
-            color: white;
-            padding: 12px 18px;
-            border: none;
-            border-radius: 6px;
-            cursor: pointer;
-        }
-        #status {
-            margin-top: 20px;
-            white-space: pre-line;
-        }
-    </style>
-</head>
-<body>
-    <div class="container">
-        <h1>PDF Ingestion for RAG</h1>
-        <p>Upload a PDF to extract text, create chunks and embeddings, and store them in ChromaDB.</p>
+app = FastAPI(title="Week 10 Tool-Using Agent")
 
-        <form id="uploadForm">
-            <input type="file" id="pdfFile" accept=".pdf" required>
-            <button id="uploadButton" type="submit">Upload and Ingest PDF</button>
-        </form>
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s | %(levelname)s | %(message)s"
+)
 
-        <div id="status"></div>
-    </div>
+logger = logging.getLogger("week10_agent")
 
-    <script>
-        const form = document.getElementById("uploadForm");
-        const fileInput = document.getElementById("pdfFile");
-        const button = document.getElementById("uploadButton");
-        const statusBox = document.getElementById("status");
+templates = Jinja2Templates(directory="templates")
 
-        form.addEventListener("submit", async function(event) {
-            event.preventDefault();
 
-            const file = fileInput.files[0];
-            if (!file) {
-                statusBox.textContent = "Please choose a PDF.";
-                return;
-            }
-
-            const data = new FormData();
-            data.append("file", file);
-
-            button.disabled = true;
-            button.textContent = "Processing...";
-            statusBox.textContent = "Uploading and processing your PDF. Please wait.";
-
-            try {
-                const response = await fetch("/upload", {
-                    method: "POST",
-                    body: data
-                });
-
-const responseText = await response.text();
-
-let result;
-try {
-    result = JSON.parse(responseText);
-} catch {
-    throw new Error(responseText || "The server returned an empty response.");
-}
-                if (!response.ok) {
-                    throw new Error(result.detail || "Upload failed.");
-                }
-
-                statusBox.textContent =
-                    "Ingestion complete!\\n" +
-                    "Pages: " + result.pages + "\\n" +
-                    "Fixed chunks: " + result.fixed_chunks + "\\n" +
-                    "Overlapping chunks: " + result.overlapping_chunks;
-
-            } catch (error) {
-                statusBox.textContent = "Error: " + error.message;
-            } finally {
-                button.disabled = false;
-                button.textContent = "Upload and Ingest PDF";
-            }
-        });
-    </script>
-</body>
-</html>
-"""
+class AgentRequest(BaseModel):
+    # task is optional: the agent can infer it from the user's input
+    task: str | None = None
+    input: str
 
 
 @app.get("/", response_class=HTMLResponse)
-def home():
-    return PAGE
+def show_ui(request: Request):
+    return templates.TemplateResponse(
+        request=request,
+        name="index.html"
+    )
 
 
-def make_chunks(text, chunk_size=150, overlap=0):
-    words = text.split()
-    if not words:
-        return []
-
-    step = chunk_size - overlap
-    chunks = []
-
-    for start in range(0, len(words), step):
-        chunk_words = words[start:start + chunk_size]
-
-        chunks.append({
-            "chunk_index": len(chunks),
-            "text": " ".join(chunk_words),
-            "start_word": start,
-            "end_word": start + len(chunk_words)
-        })
-
-        if start + chunk_size >= len(words):
-            break
-
-    return chunks
+@app.get("/health")
+def health():
+    return {"message": "Week 10 agent is running"}
 
 
-@app.post("/upload")
-async def upload_pdf(file: UploadFile = File(...)):
-    if not file.filename or not file.filename.lower().endswith(".pdf"):
-        raise HTTPException(status_code=400, detail="Please upload a PDF.")
+def choose_tool(user_input: str, requested_task: str | None = None):
+    """
+    Select a tool using simple keyword rules.
+    This is a basic rule-based router, not an LLM planner.
+    """
+    text = user_input.lower()
 
-    filename = Path(file.filename).name
-    pdf_path = UPLOAD_DIR / filename
-    pdf_path.write_bytes(await file.read())
+    # If the user explicitly selected a supported task, respect it.
+    if requested_task:
+        task = requested_task.lower().strip()
+        if task in ["ask", "predict", "lookup"]:
+            return task, False
 
-    pages = extract_pdf_text(pdf_path)
+        return None, False
 
-    document_text = "\n\n".join(
-        page.get("text", "") for page in pages
-    ).strip()
+    # Human-review checkpoint for ambiguous or sensitive requests.
+    review_terms = [
+        "delete", "cancel", "transfer money", "change my account",
+        "medical", "legal", "urgent", "approve"
+    ]
 
-    if not document_text:
-        raise HTTPException(
-            status_code=400,
-            detail="No readable text was extracted from the PDF."
+    if any(term in text for term in review_terms):
+        return None, True
+
+    # Infer tool from request language.
+    if any(word in text for word in [
+        "predict churn", "churn probability", "will this customer churn",
+        "predict", "prediction"
+    ]):
+        return "predict", False
+
+    if any(word in text for word in [
+        "customer id", "record", "lookup", "look up",
+        "find customer", "customer status"
+    ]):
+        return "lookup", False
+
+    if any(word in text for word in [
+        "how", "what", "why", "explain", "policy",
+        "process", "procedure", "tell me"
+    ]):
+        return "ask", False
+
+    # No confident match: ask for clarification/review.
+    return None, True
+
+
+@app.post("/agent")
+def run_agent(request: AgentRequest):
+    task, needs_review = choose_tool(request.input, request.task)
+
+    logger.info(
+        "Agent decision | requested_task=%s | selected_tool=%s | review=%s | input=%s",
+        request.task,
+        task,
+        needs_review,
+        request.input
+    )
+
+    # Guardrail: flag unclear or sensitive requests for human review.
+    if needs_review:
+        return {
+            "status": "needs_review",
+            "message": (
+                "This request needs clarification or human review "
+                "before a tool can be called."
+            ),
+            "tool_calls": 0
+        }
+
+    # Guardrail: refuse unsupported task names.
+    if task not in ["ask", "predict", "lookup"]:
+        return {
+            "status": "refused",
+            "message": "Unsupported task. Choose ask, predict, or lookup.",
+            "tool_calls": 0
+        }
+
+    # Guardrail: allow at most one tool call per request.
+    max_tool_calls = 1
+    tool_calls = 1
+
+    if tool_calls > max_tool_calls:
+        logger.warning("Tool-call limit reached | limit=%s", max_tool_calls)
+        return {
+            "status": "stopped",
+            "message": "Maximum tool-call limit reached.",
+            "tool_calls": tool_calls
+        }
+
+    try:
+        if task == "ask":
+            result = ask_tool(request.input)
+        elif task == "predict":
+            result = predict_tool(request.input)
+        else:
+            result = lookup_tool(request.input)
+
+        logger.info(
+            "Tool completed | tool=%s | args=%s | result=%s",
+            task,
+            request.input,
+            result
         )
 
-    fixed_chunks = make_chunks(document_text, 150, 0)
-    overlapping_chunks = make_chunks(document_text, 150, 30)
+        return {
+            "status": "success",
+            "tool": task,
+            "result": result,
+            "tool_calls": tool_calls
+        }
 
-    fixed_embeddings = generate_embeddings(
-        [chunk["text"] for chunk in fixed_chunks]
-    )
+    except Exception:
+        logger.exception(
+            "Tool failed | tool=%s | args=%s",
+            task,
+            request.input
+        )
 
-    overlapping_embeddings = generate_embeddings(
-        [chunk["text"] for chunk in overlapping_chunks]
-    )
-
-    store_chunks(
-        fixed_chunks,
-        fixed_embeddings,
-        filename,
-        "rag_fixed"
-    )
-
-    store_chunks(
-        overlapping_chunks,
-        overlapping_embeddings,
-        filename,
-        "rag_overlapping"
-    )
-
-    return JSONResponse({
-        "pages": len(pages),
-        "fixed_chunks": len(fixed_chunks),
-        "overlapping_chunks": len(overlapping_chunks)
-    })
+        return {
+            "status": "error",
+            "message": "The tool failed. Please try again.",
+            "tool": task,
+            "tool_calls": tool_calls
+        }

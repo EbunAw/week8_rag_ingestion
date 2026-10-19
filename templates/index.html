@@ -1,0 +1,136 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Week 10 | Tool-Using Agent</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            background: #f3f5f9;
+            color: #202124;
+            margin: 0;
+            padding: 40px 20px;
+        }
+
+        .container {
+            max-width: 650px;
+            margin: auto;
+            background: white;
+            padding: 28px;
+            border-radius: 14px;
+            box-shadow: 0 4px 20px #00000010;
+        }
+
+        h1 { color: #333366; margin-top: 0; }
+        p { color: #666; }
+
+        label {
+            display: block;
+            margin: 18px 0 8px;
+            font-weight: bold;
+        }
+
+        select, textarea, button {
+            width: 100%;
+            padding: 12px;
+            border-radius: 8px;
+            font-size: 15px;
+            box-sizing: border-box;
+        }
+
+        select, textarea {
+            border: 1px solid #ccc;
+        }
+
+        textarea {
+            min-height: 100px;
+            resize: vertical;
+        }
+
+        button {
+            margin-top: 20px;
+            border: none;
+            background: #333366;
+            color: white;
+            cursor: pointer;
+        }
+
+        button:disabled { opacity: 0.6; }
+
+        pre {
+            background: #f3f5f9;
+            padding: 16px;
+            border-radius: 8px;
+            white-space: pre-wrap;
+            overflow-wrap: anywhere;
+        }
+
+        .status { font-weight: bold; margin-top: 20px; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Tool-Using Agent</h1>
+        <p>Week 10: Agent tools, guardrails and structured responses.</p>
+
+        <label for="task">Choose a tool</label>
+        <select id="task">
+            <option value="ask">Ask — Knowledge question</option>
+            <option value="predict">Predict — Customer churn</option>
+            <option value="lookup">Lookup — Find a record</option>
+        </select>
+
+        <label for="userInput">Your input</label>
+        <textarea id="userInput"
+            placeholder="Enter your question or record ID"></textarea>
+
+        <button id="runButton" onclick="runAgent()">Run Agent</button>
+
+        <div class="status" id="status"></div>
+
+        <h3>Agent response</h3>
+        <pre id="result">Your response will appear here.</pre>
+    </div>
+
+    <script>
+        async function runAgent() {
+            const task = document.getElementById("task").value;
+            const input = document.getElementById("userInput").value.trim();
+            const button = document.getElementById("runButton");
+            const status = document.getElementById("status");
+            const result = document.getElementById("result");
+
+            if (!input) {
+                status.textContent = "Please enter an input.";
+                return;
+            }
+
+            button.disabled = true;
+            status.textContent = "Running agent...";
+            result.textContent = "";
+
+            try {
+                const response = await fetch("/agent", {
+                    method: "POST",
+                    headers: {
+                        "Content-Type": "application/json"
+                    },
+                    body: JSON.stringify({ task, input })
+                });
+
+                const data = await response.json();
+
+                status.textContent = "Agent status: " + data.status;
+                result.textContent = JSON.stringify(data, null, 2);
+            } catch (error) {
+                status.textContent = "Could not reach the agent.";
+                result.textContent = error.message;
+            } finally {
+                button.disabled = false;
+            }
+        }
+    </script>
+</body>
+</html>
