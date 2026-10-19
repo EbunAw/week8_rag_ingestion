@@ -1,19 +1,39 @@
+import reranker
 
-from reranker import rerank_results
 
-query = "What are the two variants of RAG, and how do they differ?"
+def test_reranker_sorts_candidates_by_score(monkeypatch):
+    # Mock hybrid retrieval so this test doesn't need local databases.
+    candidates = [
+        {
+            "id": "chunk-a",
+            "text": "Passage A",
+            "metadata": {"source": "sample.txt", "chunk_index": 0},
+        },
+        {
+            "id": "chunk-b",
+            "text": "Passage B",
+            "metadata": {"source": "sample.txt", "chunk_index": 1},
+        },
+    ]
 
-results = rerank_results(
-    query=query,
-    candidate_count=10,
-    n_results=5,
-)
+    monkeypatch.setattr(
+        reranker,
+        "hybrid_search",
+        lambda **kwargs: candidates,
+    )
 
-for rank, result in enumerate(results, start=1):
-    print(f"\nReranked Result {rank}")
-    print("Chunk ID:", result["id"])
-    print("Source:", result["metadata"]["source"])
-    print("Chunk index:", result["metadata"]["chunk_index"])
-    print("Reranker score:", round(result["reranker_score"], 4))
-    print("Retrieved by:", result["retrieved_by"])
-    print("Passage:", result["text"][:500])
+    # Mock CrossEncoder scores: passage B should rank above A.
+    monkeypatch.setattr(
+        reranker.reranker,
+        "predict",
+        lambda pairs: [0.2, 0.9],
+    )
+
+    results = reranker.rerank_results(
+        query="sample question",
+        candidate_count=2,
+        n_results=2,
+    )
+
+    assert [item["id"] for item in results] == ["chunk-b", "chunk-a"]
+    assert results[0]["reranker_score"] == 0.9
