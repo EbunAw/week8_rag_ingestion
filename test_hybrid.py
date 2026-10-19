@@ -1,10 +1,7 @@
 
 from hybrid_retrieval import hybrid_search
 
-query = (
-    "How does retrieval-augmented generation combine "
-    "retrieved knowledge with a language model?"
-)
+query = "What are the two variants of RAG, and how do they differ?"
 
 results = hybrid_search(query, n_results=5)
 

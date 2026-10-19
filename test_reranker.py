@@ -1,10 +1,7 @@
 
 from reranker import rerank_results
 
-query = (
-    "How does retrieval-augmented generation combine "
-    "retrieved knowledge with a language model?"
-)
+query = "What are the two variants of RAG, and how do they differ?"
 
 results = rerank_results(
     query=query,
