@@ -13,3 +13,5 @@ chroma_db/
 uploads/
 
 .idea/
+
+keyword_index.db
