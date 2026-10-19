@@ -1,0 +1,4 @@
+week8_rag_ingestion/
+└── .github/
+    └── workflows/
+        └── tests.yml
