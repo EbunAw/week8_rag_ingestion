@@ -2,9 +2,11 @@
 
 ## Project Overview
 
-This project implements the ingestion half of a Retrieval-Augmented Generation (RAG) pipeline. It allows a user to upload a PDF, extract its text, split the text into chunks, generate embeddings, and store the chunks and their metadata in a Chroma vector database.
+This project implements the document ingestion and retrieval-preparation stages of a Retrieval-Augmented Generation (RAG) pipeline.
 
-The purpose is to prepare document content for semantic retrieval, so relevant passages can later be supplied to a language model.
+It allows a user to upload a PDF, extract its text, split the text into chunks, generate embeddings, and store the chunks and their metadata in a Chroma vector database. The stored vectors can then be searched to retrieve passages relevant to a user’s query.
+
+The goal is to prepare document content for use by a language model. Generating a final answer with an LLM is outside the scope of this project.
 
 ## Pipeline
 
@@ -18,6 +20,8 @@ The purpose is to prepare document content for semantic retrieval, so relevant p
 - Sentence Transformers (`all-MiniLM-L6-v2`)
 - ChromaDB
 - HTML for the upload interface
+- pytest for automated tests
+- GitHub Actions for continuous integration (CI)
 
 ## Chunking Strategies
 
@@ -54,7 +58,7 @@ The document is split into 150-word chunks with a 30-word overlap between consec
 
 Both strategies were applied to the same document. Overlapping chunking produced more chunks because neighbouring chunks share some text.
 
-For retrieval, I selected the overlapping chunks because retaining context between adjacent passages can be helpful. The retrieval test returned three passages for a sample query. This was an initial test; a more thorough comparison would assess passage relevance across several queries.
+For retrieval, I used the overlapping chunks because retaining context between adjacent passages can be helpful. The initial retrieval test returned relevant passages from the indexed research paper. A more thorough comparison would evaluate passage relevance across several queries.
 
 ## Embeddings
 
@@ -66,46 +70,16 @@ Using a local embedding model allowed the pipeline to continue when the external
 
 I chose ChromaDB because it supports persistent local vector storage, similarity search, and metadata associated with stored documents. It was suitable for this lab because it allowed me to implement and test the pipeline locally.
 
-Each stored chunk should include useful metadata such as its source document and page number, allowing retrieved passages to be traced back to their origin.
+The ingestion pipeline stores the two chunking strategies in separate Chroma collections, allowing them to be compared independently.
+
+Chunks include source-related metadata so retrieved passages can be traced back to the indexed document.
 
 ## Retrieval Test
 
-I tested semantic retrieval with the query:
+I tested semantic retrieval using a question about the research paper:
 
-> How does retrieval-augmented generation combine retrieved knowledge with a language model?
+> What is retrieval-augmented generation (RAG), and how does retrieving relevant document chunks help a language model answer questions?
 
-The retrieval test successfully returned the top three matching passages from the indexed research paper. This confirms that the stored embeddings can be searched using a query embedding.
+The retrieval workflow returned passages from the indexed PDF and used them to produce a response. This demonstrates that the stored embeddings can be searched using a query embedding and that retrieved passages can be used as context for an answer.
 
-## Upload Safety
-
-**Confirm these safeguards are implemented before submission:**
-
-- [ ] The endpoint validates that uploads are PDFs.
-- [ ] The endpoint enforces a maximum file size.
-- [ ] The application processes uploaded files locally and does not fetch user-supplied URLs.
-
-Only check these boxes once you have verified the corresponding safeguards in your code.
-
-## Running the Project
-
-1. Create and activate the project’s Python virtual environment.
-2. Install the dependencies listed in `requirements.txt`.
-3. Start the FastAPI application:
-
-   ```bash
-   python -m uvicorn main:app --port 8001
-   ```
-
-4. Open `http://127.0.0.1:8001` in your browser.
-5. Upload a PDF to run the ingestion pipeline.
-6. Run the retrieval test:
-
-   ```bash
-   python test_retrieval.py
-   ```
-
-## Current Milestone
-
-The PDF ingestion, chunking, local embedding, Chroma storage, and retrieval test have been implemented and tested.
-
-This project covers the ingestion and retrieval preparation stage of RAG. Generating a final language-model answer from retrieved passages is a separate step.
+The test is an initial functional check, not
