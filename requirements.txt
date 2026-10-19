@@ -4,3 +4,4 @@ python-multipart
 pypdf
 sentence-transformers
 chromadb
+pytest
