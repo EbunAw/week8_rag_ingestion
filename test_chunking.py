@@ -1,25 +1,31 @@
-from pathlib import Path
 from chunking import fixed_size_chunking, overlapping_chunking
 
-# Read the text extracted from the research paper
-text_path = Path("uploads/rag_research_paper_extracted.txt")
-paper_text = text_path.read_text(encoding="utf-8")
 
-# Apply both chunking strategies
-fixed_chunks = fixed_size_chunking(paper_text, chunk_size=150)
-overlap_chunks = overlapping_chunking(
-    paper_text,
-    chunk_size=150,
-    overlap=30
-)
+def test_fixed_size_chunking_returns_chunks():
+    text = " ".join(f"word{i}" for i in range(350))
 
-# Compare the results
-print(f"Total words in paper: {len(paper_text.split())}")
-print(f"Fixed-size chunks: {len(fixed_chunks)}")
-print(f"Overlapping chunks: {len(overlap_chunks)}")
+    chunks = fixed_size_chunking(text, chunk_size=150)
 
-print("\nFirst fixed-size chunk:")
-print(fixed_chunks[0]["text"])
+    assert len(chunks) == 3
+    assert chunks[0]["text"].split() == [
+        f"word{i}" for i in range(150)
+    ]
 
-print("\nFirst overlapping chunk:")
-print(overlap_chunks[0]["text"])
+
+def test_overlapping_chunking_returns_chunks():
+    text = " ".join(f"word{i}" for i in range(350))
+
+    chunks = overlapping_chunking(
+        text,
+        chunk_size=150,
+        overlap=30
+    )
+
+    assert len(chunks) == 3
+
+    # The last 30 words of chunk 1 should appear
+    # as the first 30 words of chunk 2.
+    first_chunk_words = chunks[0]["text"].split()
+    second_chunk_words = chunks[1]["text"].split()
+
+    assert first_chunk_words[-30:] == second_chunk_words[:30]

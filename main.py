@@ -7,6 +7,10 @@ from extract_pdf import extract_pdf_text
 from embeddings import generate_embeddings
 from vector_store import store_chunks
 
+from uuid import uuid4
+
+MAX_UPLOAD_SIZE = 10 * 1024 * 1024  # 10 MB
+
 
 app = FastAPI()
 
@@ -150,52 +154,86 @@ def make_chunks(text, chunk_size=150, overlap=0):
 
 @app.post("/upload")
 async def upload_pdf(file: UploadFile = File(...)):
+    # Check the filename extension
     if not file.filename or not file.filename.lower().endswith(".pdf"):
-        raise HTTPException(status_code=400, detail="Please upload a PDF.")
-
-    filename = Path(file.filename).name
-    pdf_path = UPLOAD_DIR / filename
-    pdf_path.write_bytes(await file.read())
-
-    pages = extract_pdf_text(pdf_path)
-
-    document_text = "\n\n".join(
-        page.get("text", "") for page in pages
-    ).strip()
-
-    if not document_text:
         raise HTTPException(
             status_code=400,
-            detail="No readable text was extracted from the PDF."
+            detail="Please upload a PDF."
         )
 
-    fixed_chunks = make_chunks(document_text, 150, 0)
-    overlapping_chunks = make_chunks(document_text, 150, 30)
+    # Read only up to the limit plus one byte, so oversized files are detected
+    content = await file.read(MAX_UPLOAD_SIZE + 1)
 
-    fixed_embeddings = generate_embeddings(
-        [chunk["text"] for chunk in fixed_chunks]
-    )
+    if len(content) > MAX_UPLOAD_SIZE:
+        raise HTTPException(
+            status_code=413,
+            detail="File is too large. Maximum upload size is 10 MB."
+        )
 
-    overlapping_embeddings = generate_embeddings(
-        [chunk["text"] for chunk in overlapping_chunks]
-    )
+    # Check the PDF file signature; don't rely on the extension alone
+    if not content.startswith(b"%PDF-"):
+        raise HTTPException(
+            status_code=400,
+            detail="The uploaded file does not appear to be a valid PDF."
+        )
 
-    store_chunks(
-        fixed_chunks,
-        fixed_embeddings,
-        filename,
-        "rag_fixed"
-    )
+    # Use a generated filename to avoid collisions and path manipulation
+    pdf_path = UPLOAD_DIR / f"{uuid4().hex}.pdf"
+    pdf_path.write_bytes(content)
 
-    store_chunks(
-        overlapping_chunks,
-        overlapping_embeddings,
-        filename,
-        "rag_overlapping"
-    )
+    try:
+        try:
+            pages = extract_pdf_text(pdf_path)
+        except Exception as exc:
+            raise HTTPException(
+                status_code=400,
+                detail="The PDF could not be read. Please try another PDF."
+            ) from exc
 
-    return JSONResponse({
-        "pages": len(pages),
-        "fixed_chunks": len(fixed_chunks),
-        "overlapping_chunks": len(overlapping_chunks)
-    })
+        document_text = "\n\n".join(
+            page.get("text", "") for page in pages
+        ).strip()
+
+        if not document_text:
+            raise HTTPException(
+                status_code=400,
+                detail="No readable text was extracted from the PDF."
+            )
+
+        fixed_chunks = make_chunks(document_text, 150, 0)
+        overlapping_chunks = make_chunks(document_text, 150, 30)
+
+        fixed_embeddings = generate_embeddings(
+            [chunk["text"] for chunk in fixed_chunks]
+        )
+
+        overlapping_embeddings = generate_embeddings(
+            [chunk["text"] for chunk in overlapping_chunks]
+        )
+
+        # Store the original upload name as metadata, not as the disk path
+        source_name = Path(file.filename).name
+
+        store_chunks(
+            fixed_chunks,
+            fixed_embeddings,
+            source_name,
+            "rag_fixed"
+        )
+
+        store_chunks(
+            overlapping_chunks,
+            overlapping_embeddings,
+            source_name,
+            "rag_overlapping"
+        )
+
+        return JSONResponse({
+            "pages": len(pages),
+            "fixed_chunks": len(fixed_chunks),
+            "overlapping_chunks": len(overlapping_chunks)
+        })
+
+    finally:
+        # Remove the temporary uploaded PDF after processing, even on failure
+        pdf_path.unlink(missing_ok=True)
