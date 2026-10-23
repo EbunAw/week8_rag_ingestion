@@ -1,23 +1,20 @@
-
 import hybrid_retrieval
 
 
 def test_hybrid_search_merges_vector_and_keyword_results(monkeypatch):
     query = "What are the two variants of RAG, and how do they differ?"
 
-    vector_results = [
-        {
-            "id": "chunk-a",
-            "text": "Vector result A",
-            "metadata": {"source": "sample.txt", "chunk_index": 0},
-        },
-        {
-            "id": "chunk-b",
-            "text": "Vector result B",
-            "metadata": {"source": "sample.txt", "chunk_index": 1},
-        },
-    ]
+    # Mock Chroma's grouped query result format.
+    vector_results = {
+        "ids": [["chunk-a", "chunk-b"]],
+        "documents": [["Vector result A", "Vector result B"]],
+        "metadatas": [[
+            {"source": "sample.txt", "chunk_index": 0},
+            {"source": "sample.txt", "chunk_index": 1},
+        ]],
+    }
 
+    # Keyword search returns a list of chunk dictionaries.
     keyword_results = [
         {
             "id": "chunk-a",

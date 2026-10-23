@@ -53,15 +53,11 @@ def hybrid_search(
         fused[chunk_id]["retrieved_by"].append(retrieval_type)
 
     # Chroma returns results grouped by query.
-    for rank, chunk_id in enumerate(
-        vector_results["ids"][0], start=1
-    ):
-        index = rank - 1
-
+    for rank, chunk_id in enumerate(vector_results["ids"][0], start=1):
         add_result(
             chunk_id=chunk_id,
-            text=vector_results["documents"][0][index],
-            metadata=vector_results["metadatas"][0][index],
+            text=vector_results["documents"][0][rank - 1],
+            metadata=vector_results["metadatas"][0][rank - 1],
             rank=rank,
             retrieval_type="vector",
         )
