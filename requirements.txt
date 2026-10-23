@@ -1,3 +1,7 @@
+fastapi
+uvicorn[standard]
+pypdf
 sentence-transformers
 python-dotenv
 chromadb
+google-genai
