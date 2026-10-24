@@ -3,10 +3,10 @@
 on:
   push:
     branches:
-      - week10
+      - week11
   pull_request:
     branches:
-      - week10
+      - week11
 
 jobs:
   test:
